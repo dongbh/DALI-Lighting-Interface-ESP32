@@ -238,8 +238,20 @@ void menu()
 void menu_blink()
 {
     printf("Running: Blinking all lamps\n");
-    for (uint8_t i = 0; i < 5; i++) {
+
+    for (uint8_t i = 0; i < 4; i++) {
         dali.set_level(254);
+        printf(".");
+        vTaskDelay(pdMS_TO_TICKS(500));
+        dali.set_level(0);
+        printf(".");
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    printf("Running: Blinking lamps one by one\n");
+
+    for (uint8_t i = 0; i < 4; i++) {
+        dali.set_level(254, i);
         printf(".");
         vTaskDelay(pdMS_TO_TICKS(500));
         dali.set_level(0);
