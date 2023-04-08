@@ -262,7 +262,7 @@ uint8_t Dali::_man_weight(uint8_t i) {
 }       
 
 //call with bitpos <= DALI_RX_BUF_SIZE*8-8;
-uint8_t Dali::_man_sample(uint8_t *edata, uint16_t bitpos, uint8_t *stop_coll) {
+uint8_t Dali::_man_sample(volatile uint8_t *edata, uint16_t bitpos, uint8_t *stop_coll) {
   uint8_t pos = bitpos>>3;
   uint8_t shift = bitpos & 0x7;
   uint8_t sample = (edata[pos] << shift) | (edata[pos+1] >> (8-shift));
@@ -279,7 +279,7 @@ uint8_t Dali::_man_sample(uint8_t *edata, uint16_t bitpos, uint8_t *stop_coll) {
 
 //decode 8 times oversampled encoded data
 //returns bitlen of decoded data, or 0 on collision
-uint8_t Dali::_man_decode(uint8_t *edata, uint8_t ebitlen, uint8_t *ddata) {
+uint8_t Dali::_man_decode(volatile uint8_t *edata, uint8_t ebitlen, uint8_t *ddata) {
   uint8_t dbitlen = 0;
   uint16_t ebitpos = 1;
   while(ebitpos+1<ebitlen) { 
@@ -716,6 +716,8 @@ uint8_t Dali::read_memory_bank(uint8_t bank, uint8_t adr) {
 
   uint16_t dtr0 = cmd(DALI_QUERY_CONTENT_DTR0,adr); //get DTR value
   if(dtr0 != 255) return 4;
+
+  return 0;
 }
 
 

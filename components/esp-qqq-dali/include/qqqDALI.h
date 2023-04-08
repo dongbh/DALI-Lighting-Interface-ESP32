@@ -60,7 +60,7 @@ public:
   uint8_t tx_state(); //low level tx state, returns DALI_RESULT_COLLISION, DALI_RESULT_TRANSMITTING or DALI_OK
   uint8_t txcollisionhandling; //collision handling DALI_TX_COLLISSION_AUTO,DALI_TX_COLLISSION_OFF,DALI_TX_COLLISSION_ON
   uint16_t milli(); //millis() implementation, 1 milli is 1.04167 ms (10 timer ticks), rollover 65 seconds
-  Dali() : busstate(0), ticks(0), _milli(0), idlecnt(0), txcollisionhandling(DALI_TX_COLLISSION_AUTO) {}; //initialize variables
+  Dali() : txcollisionhandling(DALI_TX_COLLISSION_AUTO), busstate(0), ticks(0), _milli(0), idlecnt(0) {}; //initialize variables
   
   //-------------------------------------------------
   //HIGH LEVEL PUBLIC
@@ -127,8 +127,8 @@ private:
 
 
   uint8_t _man_weight(uint8_t i);
-  uint8_t _man_sample(uint8_t *edata, uint16_t bitpos, uint8_t *stop_coll);
-  uint8_t _man_decode(uint8_t *edata, uint8_t ebitlen, uint8_t *ddata);
+  uint8_t _man_sample(volatile uint8_t *edata, uint16_t bitpos, uint8_t *stop_coll);
+  uint8_t _man_decode(volatile uint8_t *edata, uint8_t ebitlen, uint8_t *ddata);
 
   //-------------------------------------------------
   //HIGH LEVEL PRIVATE
