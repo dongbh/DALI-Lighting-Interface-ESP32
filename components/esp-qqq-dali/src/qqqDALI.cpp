@@ -26,7 +26,7 @@ Changelog:
 //=================================================================
 // LOW LEVEL DRIVER
 //=================================================================
-#include "qqqDALI.h"
+#include "../include/qqqDali.h"
 
 #ifdef DALI_DEBUG
 #include "arduino.h"
