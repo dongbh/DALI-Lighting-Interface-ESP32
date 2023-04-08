@@ -22,6 +22,8 @@ Changelog:
 ###########################################################################*/
 #include <inttypes.h>
 
+#include "esp_attr.h"
+
 //-------------------------------------------------
 //LOW LEVEL DRIVER DEFINES
 #define DALI_BAUD 1200
@@ -60,7 +62,7 @@ public:
   uint8_t tx_state(); //low level tx state, returns DALI_RESULT_COLLISION, DALI_RESULT_TRANSMITTING or DALI_OK
   uint8_t txcollisionhandling; //collision handling DALI_TX_COLLISSION_AUTO,DALI_TX_COLLISSION_OFF,DALI_TX_COLLISSION_ON
   uint16_t milli(); //millis() implementation, 1 milli is 1.04167 ms (10 timer ticks), rollover 65 seconds
-  Dali() : txcollisionhandling(DALI_TX_COLLISSION_AUTO), busstate(0), ticks(0), _milli(0), idlecnt(0) {}; //initialize variables
+  Dali() : txcollisionhandling(DALI_TX_COLLISSION_AUTO), busstate(0), /* ticks(0), _milli(0), */ idlecnt(0) {}; //initialize variables
   
   //-------------------------------------------------
   //HIGH LEVEL PUBLIC
@@ -94,8 +96,8 @@ private:
   
   //BUS
   volatile uint8_t busstate;       //current bus state IDLE,TX,RX,COLLISION_RX,COLLISION_TX
-  volatile uint8_t ticks;          //sample counter, wraps around. 1 tick is approx 0.1 ms, overflow 6.5 seconds
-  volatile uint16_t _milli;        //millisecond counter, wraps around, overflow 256 ms
+  // // volatile uint8_t ticks;          //sample counter, wraps around. 1 tick is approx 0.1 ms, overflow 6.5 seconds
+  // // volatile uint16_t _milli;        //millisecond counter, wraps around, overflow 256 ms
   volatile uint8_t idlecnt;        //number of idle samples (capped at 255)
     
   //RECEIVER
@@ -304,7 +306,7 @@ private:
 #define DALI_QUERY_POWER_FAILURE 155 //155  - Has the slave operated without the execution of reset-command or the adjustment of the lighting control level?
 #define DALI_QUERY_CONTENT_DTR1 156 //156  - What is the DTR1 content?
 #define DALI_QUERY_CONTENT_DTR2 157 //157  - What is the DTR2 content?
-#define DALI_QUERY_OPERATING_MODE 158 //158 DALI-2 - What is the Operating Mode? (Only IEC62386-102ed2.0 )
+#define DALI_QUERY_OPERATING_MODE_DALI2 158 //158 DALI-2 - What is the Operating Mode? (Only IEC62386-102ed2.0 )
 #define DALI_QUERY_LIGHT_SOURCE_TYPE 159 //159 DALI-2 - What is the Light source type? (Only IEC62386-102ed2.0 )
 #define DALI_QUERY_ACTUAL_LEVEL 160 //160  - What is the "ACTUAL LEVEL" (the current lighting control level)?
 #define DALI_QUERY_MAX_LEVEL 161 //161  - What is the maximum lighting control level?

@@ -16,158 +16,73 @@
 ###########################################################################*/
 #include "qqqDALI.h"
 
+#include "esp_log.h"
+#include "esp_system.h"
+#include "esp_attr.h"
+#include "esp_timer.h"
+
+#include "freertos/FreeRTOS.h"
+
+#include "driver/gpio.h"
+#include "driver/timer.h"
+#include "driver/uart.h"
+
+#include "esp_task_wdt.h"
+
+#include <cstdio>
+
 static const char* TAG = "main";
 
 Dali dali;
 
-// ATMEGA328 specific
-#define TX_PIN 3
-#define RX_PIN 4
+// Define the GPIO pins used for DALI bus communication
+#define DALI_RX_PIN GPIO_NUM_4
+#define DALI_TX_PIN GPIO_NUM_16
+
+#define TIMER_UPDATES_PER_SECOND 9600
 
 // is bus asserted
-uint8_t bus_is_high()
+uint8_t IRAM_ATTR bus_is_high()
 {
-    return digitalRead(RX_PIN); // slow version
-    // return PIND & (1 << 4); //fast version
+    return gpio_get_level(DALI_RX_PIN);
 }
 
 // assert bus
-void bus_set_low()
+void IRAM_ATTR bus_set_low()
 {
-    digitalWrite(TX_PIN, HIGH); // opto slow version
-    // PORTD |= (1 << 3); //opto fast version
-
-    // digitalWrite(TX_PIN,LOW); //diy slow version
-    // PORTD &= ~(1 << 3); //diy fast version
+    gpio_set_level(DALI_TX_PIN, 1);
 }
 
 // release bus
-void bus_set_high()
+void IRAM_ATTR bus_set_high()
 {
-    digitalWrite(TX_PIN, LOW); // opto slow version
-    // PORTD &= ~(1 << 3); //opto fast version
+    gpio_set_level(DALI_TX_PIN, 0);
+}
 
-    // digitalWrite(TX_PIN,HIGH); //diy slow version
-    // PORTD |= (1 << 3); //diy fast version
+void IRAM_ATTR dali_timer_callback(void* arg)
+{
+    dali.timer();
 }
 
 void bus_init()
 {
     // setup rx pin
-    pinMode(4, INPUT);
+    gpio_set_direction(DALI_RX_PIN, GPIO_MODE_INPUT);
 
     // setup tx pin
-    pinMode(3, OUTPUT);
+    gpio_set_direction(DALI_TX_PIN, GPIO_MODE_OUTPUT);
 
-    // setup tx timer interrupt
-    TCCR1A = 0;
-    TCCR1B = 0;
-    TCNT1 = 0;
-    OCR1A = (F_CPU + 8 * DALI_BAUD / 2) / (8 * DALI_BAUD); // compare match register at baud rate * 8
-    TCCR1B |= (1 << WGM12); // CTC mode
-    TCCR1B |= (1 << CS10); // 1:1 prescaler
-    TIMSK1 |= (1 << OCIE1A); // enable timer compare interrupt
-}
+    const esp_timer_create_args_t my_timer_args = {
+        .callback = &dali_timer_callback, 
+        .arg = nullptr,
+        .dispatch_method = esp_timer_dispatch_t::ESP_TIMER_TASK, 
+        .name = "dali_timer_callback", 
+        .skip_unhandled_events = false 
+    };
 
-ISR(TIMER1_COMPA_vect)
-{
-    dali.timer();
-}
-
-void menu()
-{
-    Serial.println("----------------------------");
-    Serial.println("1 Blink all lamps");
-    Serial.println("2 Scan short addresses");
-    Serial.println("3 Commission short addresses");
-    Serial.println("4 Commission short addresses (VERBOSE)");
-    Serial.println("5 Delete short addresses");
-    Serial.println("6 Read memory bank");
-    Serial.println("----------------------------");
-}
-
-void menu_blink()
-{
-    Serial.println("Running: Blinking all lamps");
-    for (uint8_t i = 0; i < 5; i++) {
-        dali.set_level(254);
-        Serial.print(".");
-        delay(500);
-        dali.set_level(0);
-        Serial.print(".");
-        delay(500);
-    }
-    Serial.println();
-}
-
-void menu_scan_short_addr()
-{
-    Serial.println("Running: Scan all short addresses");
-    uint8_t sa;
-    uint8_t cnt = 0;
-    for (sa = 0; sa < 64; sa++) {
-        int16_t rv = dali.cmd(DALI_QUERY_STATUS, sa);
-        if (rv >= 0) {
-            cnt++;
-            Serial.print("short address=");
-            Serial.print(sa);
-            Serial.print(" status=0x");
-            Serial.print(rv, HEX);
-            Serial.print(" minLevel=");
-            Serial.print(dali.cmd(DALI_QUERY_MIN_LEVEL, sa));
-            Serial.print("   flashing");
-            for (uint8_t i = 0; i < 5; i++) {
-                dali.set_level(254, sa);
-                Serial.print(".");
-                delay(500);
-                dali.set_level(0, sa);
-                Serial.print(".");
-                delay(500);
-            }
-            Serial.println();
-        } else if (-rv != DALI_RESULT_NO_REPLY) {
-            Serial.print("short address=");
-            Serial.print(sa);
-            Serial.print(" ERROR=");
-            Serial.println(-rv);
-        }
-    }
-    Serial.print("DONE, found ");
-    Serial.print(cnt);
-    Serial.println(" short addresses");
-}
-
-// might need a couple of calls to find everything...
-void menu_commission()
-{
-    Serial.println("Running: Commission");
-    Serial.println("Might need a couple of runs to find all lamps ...");
-    Serial.println("Be patient, this takes a while ...");
-    uint8_t cnt = dali.commission(0xff); // init_arg=0b11111111 : all without short address
-    Serial.print("DONE, assigned ");
-    Serial.print(cnt);
-    Serial.println(" new short addresses");
-}
-
-// might need a couple of calls to find everything...
-void menu_commission_debug()
-{
-    Serial.println("Running: Commission (VERBOSE)");
-    Serial.println("Might need a couple of runs to find all lamps ...");
-    Serial.println("Be patient, this takes a while ...");
-    uint8_t cnt = debug_commission(0xff); // init_arg=0b11111111 : all without short address
-    Serial.print("DONE, assigned ");
-    Serial.print(cnt);
-    Serial.println(" new short addresses");
-}
-
-void menu_delete_short_addr()
-{
-    Serial.println("Running: Delete all short addresses");
-    // remove all short addresses
-    dali.cmd(DALI_DATA_TRANSFER_REGISTER0, 0xFF);
-    dali.cmd(DALI_SET_SHORT_ADDRESS, 0xFF);
-    Serial.println("DONE delete");
+    esp_timer_handle_t timer_handler;
+    ESP_ERROR_CHECK(esp_timer_create(&my_timer_args, &timer_handler));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(timer_handler, 1000000 / TIMER_UPDATES_PER_SECOND));
 }
 
 // init_arg=11111111 : all without short address
@@ -187,18 +102,15 @@ uint8_t debug_commission(uint8_t init_arg)
     // need 100ms pause after RANDOMISE, scan takes care of this...
 
     // find used short addresses (run always, seems to work better than without...)
-    Serial.println("Find existing short adr");
+    printf("Find existing short adr\n");
     for (sa = 0; sa < 64; sa++) {
+        esp_task_wdt_reset();
+
         int16_t rv = dali.cmd(DALI_QUERY_STATUS, sa);
         if (rv >= 0) {
             if (init_arg != 0b00000000)
                 arr[sa] = 1; // remove address from list if not in "all" mode
-            Serial.print("sortadr=");
-            Serial.print(sa);
-            Serial.print(" status=0x");
-            Serial.print(rv, HEX);
-            Serial.print(" minLevel=");
-            Serial.println(dali.cmd(DALI_QUERY_MIN_LEVEL, sa));
+            printf("sortadr=%d status=0x%X minLevel=%d\n", sa, rv, dali.cmd(DALI_QUERY_MIN_LEVEL, sa));
         }
     }
 
@@ -209,13 +121,14 @@ uint8_t debug_commission(uint8_t init_arg)
     //  delay(200);
     //}
 
-    Serial.println("Find random adr");
+    printf("Find random adr\n");
     while (1) {
+        esp_task_wdt_reset();
+
         uint32_t adr = dali.find_addr();
         if (adr > 0xffffff)
             break;
-        Serial.print("found=");
-        Serial.println(adr, HEX);
+        printf("found=%X\n", adr);
 
         // find available address
         for (sa = 0; sa < 64; sa++) {
@@ -227,18 +140,50 @@ uint8_t debug_commission(uint8_t init_arg)
         arr[sa] = 1;
         cnt++;
 
-        Serial.print("program short adr=");
-        Serial.println(sa);
+        printf("program short adr=%d\n", sa);
         dali.program_short_address(sa);
-        Serial.print("read short adr=");
-        Serial.println(dali.query_short_address());
 
+        printf("read short adr=%d\n", dali.query_short_address());
         dali.cmd(DALI_WITHDRAW, 0x00);
+        
     }
 
     dali.cmd(DALI_TERMINATE, 0x00);
     return cnt;
 }
+
+uint8_t dali_read_memory_bank_verbose(uint8_t bank, uint8_t adr)
+{
+    uint16_t rv;
+
+    if (dali.set_dtr0(0, adr))
+        return 1;
+    if (dali.set_dtr1(bank, adr))
+        return 2;
+
+    // uint8_t data[255];
+    uint16_t len = dali.cmd(DALI_READ_MEMORY_LOCATION, adr);
+    printf("memlen=%d\n", len);
+    for (uint8_t i = 0; i < len; i++) {
+        int16_t mem = dali.cmd(DALI_READ_MEMORY_LOCATION, adr);
+        if (mem >= 0) {
+            // data[i] = mem;
+            printf("%x:%d 0x%x ", i, mem, mem);
+            if (mem >= 32 && mem < 127)
+                printf("%c", (char)mem);
+            printf("\n");
+        } else if (mem != -DALI_RESULT_NO_REPLY) {
+            printf("%x:err=%d\n", i, mem);
+        }
+    }
+
+    uint16_t dtr0 = dali.cmd(DALI_QUERY_CONTENT_DTR0, adr); // get DTR value
+    if (dtr0 != 255)
+        return 4;
+
+    return 0;
+}
+
 
 void menu_read_memory()
 {
@@ -258,87 +203,150 @@ void menu_read_memory()
       }
     */
 
-    Serial.println("Running: Scan all short addresses");
+    printf("Running: Scan all short addresses\n");
     uint8_t sa;
     uint8_t cnt = 0;
     for (sa = 0; sa < 64; sa++) {
         int16_t rv = dali.cmd(DALI_QUERY_STATUS, sa);
         if (rv >= 0) {
             cnt++;
-            Serial.print("\nshort address ");
-            Serial.println(sa);
-            Serial.print("status=0x");
-            Serial.println(rv, HEX);
-            Serial.print("minLevel=");
-            Serial.println(dali.cmd(DALI_QUERY_MIN_LEVEL, sa));
+            printf("\nshort address %d\n", sa);
+            printf("status=0x%X\n", rv);
+            printf("minLevel=%d\n", dali.cmd(DALI_QUERY_MIN_LEVEL, sa));
 
             dali_read_memory_bank_verbose(0, sa);
 
         } else if (-rv != DALI_RESULT_NO_REPLY) {
-            Serial.print("short address=");
-            Serial.print(sa);
-            Serial.print(" ERROR=");
-            Serial.println(-rv);
+            printf("short address=%d ERROR=%d\n", sa, -rv);
         }
     }
-    Serial.print("DONE, found ");
-    Serial.print(cnt);
-    Serial.println(" short addresses");
+    printf("DONE, found %d short addresses\n", cnt);
 }
 
-uint8_t dali_read_memory_bank_verbose(uint8_t bank, uint8_t adr)
+void menu()
 {
-    uint16_t rv;
+    printf("----------------------------\n");
+    printf("1 Blink all lamps\n");
+    printf("2 Scan short addresses\n");
+    printf("3 Commission short addresses\n");
+    printf("4 Commission short addresses (VERBOSE)\n");
+    printf("5 Delete short addresses\n");
+    printf("6 Read memory bank\n");
+    printf("----------------------------\n");
+}
 
-    if (dali.set_dtr0(0, adr))
-        return 1;
-    if (dali.set_dtr1(bank, adr))
-        return 2;
+void menu_blink()
+{
+    printf("Running: Blinking all lamps\n");
+    for (uint8_t i = 0; i < 5; i++) {
+        dali.set_level(254);
+        printf(".");
+        vTaskDelay(pdMS_TO_TICKS(500));
+        dali.set_level(0);
+        printf(".");
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+    printf("\n");
+}
 
-    // uint8_t data[255];
-    uint16_t len = dali.cmd(DALI_READ_MEMORY_LOCATION, adr);
-    Serial.print("memlen=");
-    Serial.println(len);
-    for (uint8_t i = 0; i < len; i++) {
-        int16_t mem = dali.cmd(DALI_READ_MEMORY_LOCATION, adr);
-        if (mem >= 0) {
-            // data[i] = mem;
-            Serial.print(i, HEX);
-            Serial.print(":");
-            Serial.print(mem);
-            Serial.print(" 0x");
-            Serial.print(mem, HEX);
-            Serial.print(" ");
-            if (mem >= 32 && mem < 127)
-                Serial.print((char)mem);
-            Serial.println();
-        } else if (mem != -DALI_RESULT_NO_REPLY) {
-            Serial.print(i, HEX);
-            Serial.print(":err=");
-            Serial.println(mem);
+void menu_scan_short_addr()
+{
+    printf("Running: Scan all short addresses\n");
+    uint8_t sa;
+    uint8_t cnt = 0;
+    for (sa = 0; sa < 64; sa++) {
+        int16_t rv = dali.cmd(DALI_QUERY_STATUS, sa);
+        if (rv >= 0) {
+            cnt++;
+            printf("shortAddress=%d status=0x%X minLevel=%d   flashing", sa, rv, dali.cmd(DALI_QUERY_MIN_LEVEL, sa));
+            for (uint8_t i = 0; i < 5; i++) {
+                dali.set_level(254, sa);
+                printf(".");
+                vTaskDelay(pdMS_TO_TICKS(500));
+                dali.set_level(0, sa);
+                printf(".");
+                vTaskDelay(pdMS_TO_TICKS(500));
+            }
+            printf("\n");
+        } else if (-rv != DALI_RESULT_NO_REPLY) {
+            printf("short address=%d ERROR=%d\n", sa, -rv);
         }
     }
-
-    uint16_t dtr0 = dali.cmd(DALI_QUERY_CONTENT_DTR0, adr); // get DTR value
-    if (dtr0 != 255)
-        return 4;
+    printf("DONE, found %d short addresses\n", cnt);
 }
+
+// might need a couple of calls to find everything...
+void menu_commission()
+{
+    printf("Running: Commission\n");
+    printf("Might need a couple of runs to find all lamps ...\n");
+    printf("Be patient, this takes a while ...\n");
+    uint8_t cnt = dali.commission(0xff); // init_arg=0b11111111 : all without short address
+    printf("DONE, assigned %d new short addresses\n", cnt);
+}
+
+// might need a couple of calls to find everything...
+void menu_commission_debug()
+{
+    printf("Running: Commission (VERBOSE)\n");
+    printf("Might need a couple of runs to find all lamps ...\n");
+    printf("Be patient, this takes a while ...\n");
+    uint8_t cnt = debug_commission(0xff); // init_arg=0b11111111 : all without short address
+    printf("DONE, assigned %d new short addresses\n", cnt);
+}
+
+void menu_delete_short_addr()
+{
+    printf("Running: Delete all short addresses\n");
+    // remove all short addresses
+    dali.cmd(DALI_DATA_TRANSFER_REGISTER0, 0xFF);
+    dali.cmd(DALI_SET_SHORT_ADDRESS, 0xFF);
+    printf("DONE delete\n");
+}
+
 
 extern "C" void app_main()
 {
+    uint8_t data;
+    size_t size;
 
-    Serial.begin(115200);
-    Serial.println("DALI Commissioning Demo");
+    // Configure UART parameters
+    uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
+    };
 
-    dali.begin(bus_is_high, bus_set_high, bus_set_low);
+    // Install UART driver
+    uart_driver_install(UART_NUM_0, 1024, 0, 0, NULL, 0);
+
+    // Configure UART parameters
+    uart_param_config(UART_NUM_0, &uart_config);
+
+    // Set UART pins (using default pins)
+    uart_set_pin(UART_NUM_0, 1, 3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+
+    vTaskDelay(1);
+
+    dali.begin(bus_is_high, bus_set_low, bus_set_high);
     bus_init();
+
+    printf("\nDALI Commissioning Demo\n");
 
     menu();
 
     for (;;) {
-        while (Serial.available() > 0) {
-            int incomingByte = Serial.read();
-            switch (incomingByte) {
+
+        if (uart_get_buffered_data_len(UART_NUM_0, &size) != ESP_OK) {
+            ESP_LOGE(TAG, "uart_get_buffered_data_len failed");
+            return;
+        }
+
+        while (size > 0) {
+            uart_read_bytes(UART_NUM_0, &data, 1, 0);
+            switch (data) {
             case '1':
                 menu_blink();
                 menu();
@@ -364,6 +372,9 @@ extern "C" void app_main()
                 menu();
                 break;
             }
+            size--;
         }
+
+        vTaskDelay(1);
     }
 }

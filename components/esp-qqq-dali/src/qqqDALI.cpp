@@ -28,9 +28,9 @@ Changelog:
 //=================================================================
 #include "../include/qqqDali.h"
 
-#ifdef DALI_DEBUG
-#include "arduino.h"
-#endif
+#include "esp_task_wdt.h"
+#include "esp_timer.h"
+
 
 //timing
 #define BEFORE_CMD_IDLE_MS 13 //require 13ms idle time before sending a cmd()
@@ -50,7 +50,7 @@ void Dali::begin(uint8_t (*bus_is_high)(), void (*bus_set_low)(), void (*bus_set
   _init();
 }
 
-void Dali::_set_busstate_idle() {
+void IRAM_ATTR Dali::_set_busstate_idle() {
   bus_set_high();
   idlecnt = 0;
   busstate = IDLE;
@@ -59,26 +59,28 @@ void Dali::_set_busstate_idle() {
 void Dali::_init() {
   _set_busstate_idle();
   rxstate = EMPTY;
-  txcollision = 0;  
+  txcollision = 0;
 }
 
-uint16_t Dali::milli() {
-  while(ticks==0xFF); //wait for _millis update to finish
-  return _milli;
+uint16_t IRAM_ATTR Dali::milli() {
+  // // while(ticks==0xFF); //wait for _millis update to finish
+  // // return _milli;
+  return esp_timer_get_time() / 1000;
 }
 
 // timer interrupt service routine, called 9600 times per second
-void Dali::timer() {
+ void IRAM_ATTR Dali::timer() {
+
   //get bus sample
   uint8_t busishigh = (bus_is_high() ? 1 : 0); //bus_high is 1 on high (non-asserted), 0 on low (asserted)
 
-  //millis update
-  ticks++;
-  if(ticks==10) {
-    ticks = 0xff; //signal _millis is updating
-    _milli++;
-    ticks = 0; 
-  }
+  // // //millis update
+  // // ticks++;
+  // // if(ticks==10) {
+  // //   ticks = 0xff; //signal _millis is updating
+  // //   _milli++;
+  // //   ticks = 0; 
+  // // }
   
   switch(busstate) {
   case IDLE:
@@ -377,11 +379,13 @@ uint8_t Dali::tx_wait(uint8_t* data, uint8_t bitlen, uint16_t timeout_ms) {
     //wait for 10ms idle
      while(idlecnt < BEFORE_CMD_IDLE_MS){
       //Serial.print('w');
+      vTaskDelay(1);
       if(milli() - start_ms > timeout_ms) return DALI_RESULT_TIMEOUT;
     }   
     //try transmit
     while(tx(data,bitlen) != DALI_OK){
       //Serial.print('w');
+      vTaskDelay(1);
       if(milli() - start_ms > timeout_ms) return DALI_RESULT_TIMEOUT;
     }
     //wait for completion
@@ -389,11 +393,13 @@ uint8_t Dali::tx_wait(uint8_t* data, uint8_t bitlen, uint16_t timeout_ms) {
     while(1) {
       rv = tx_state();
       if(rv != DALI_RESULT_TRANSMITTING) break;
+      vTaskDelay(1);
       if(milli() - start_ms > timeout_ms) return DALI_RESULT_TIMEOUT;
     }
     //exit if transmit was ok
     if(rv == DALI_OK) return DALI_OK;
     //not ok (for example collision) - retry until timeout
+    vTaskDelay(1);
   }
   return DALI_RESULT_TIMEOUT;
 }
@@ -431,6 +437,7 @@ int16_t Dali::tx_wait_rx(uint8_t cmd0, uint8_t cmd1, uint16_t timeout_ms) {
         else
           return -DALI_RESULT_INVALID_REPLY;
     }
+    vTaskDelay(1);
     if(milli() - rx_start_ms > rx_timeout_ms) return -DALI_RESULT_NO_REPLY;
   }
   return -DALI_RESULT_NO_REPLY; //should not get here
@@ -639,6 +646,7 @@ uint8_t Dali::commission(uint8_t init_arg) {
 
     //remove the device from the search
     cmd(DALI_WITHDRAW,0x00);
+    vTaskDelay(1);
   }
 
   //terminate the DALI_INITIALISE command
