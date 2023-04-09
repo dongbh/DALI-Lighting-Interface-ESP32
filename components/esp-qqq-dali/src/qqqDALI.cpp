@@ -21,7 +21,7 @@ Changelog:
 2020-11-08 Created & tested on ATMega328 @ 8Mhz
 ###########################################################################*/
 
-// #define DALI_DEBUG
+#define DALI_DEBUG
 
 //=================================================================
 // LOW LEVEL DRIVER
@@ -30,6 +30,11 @@ Changelog:
 
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_system.h"
+#include "esp_log.h"
 
 // timing
 #define BEFORE_CMD_IDLE_MS 13 // require 13ms idle time before sending a cmd()
@@ -363,31 +368,22 @@ uint8_t Dali::rx(uint8_t* ddata)
 
 #ifdef DALI_DEBUG
         if (dlen != 8) {
-            // print received samples
-            Serial.print("RX: len=");
-            Serial.print(rxpos * 8);
-            Serial.print(" ");
+            ESP_LOGI(TAG, "RX: len=%d", rxpos * 8);
+            char buffer[80];
             for (uint8_t i = 0; i < rxpos; i++) {
-                for (uint8_t m = 0x80; m != 0x00; m >>= 1) {
-                    if (rxdata[i] & m)
-                        Serial.print("1");
-                    else
-                        Serial.print("0");
+                for (uint8_t m = 0x80, j = 0; m != 0x00; m >>= 1, j++) {
+                    buffer[j] = (rxdata[i] & m) ? '1' : '0';
                 }
-                Serial.print(" ");
+                buffer[8] = '\0';
+                ESP_LOGI(TAG, "%s", buffer);
             }
 
-            // print decoded data
-            Serial.print("decoded: len=");
-            Serial.print(dlen);
-            Serial.print(" ");
+            ESP_LOGI(TAG, "decoded: len=%d", dlen);
             for (uint8_t i = 0; i < dlen; i++) {
-                if (ddata[i >> 3] & (1 << (7 - (i & 0x7))))
-                    Serial.print("1");
-                else
-                    Serial.print("0");
+                buffer[i] = (ddata[i >> 3] & (1 << (7 - (i & 0x7)))) ? '1' : '0';
             }
-            Serial.println();
+            buffer[dlen] = '\0';
+            ESP_LOGI(TAG, "%s", buffer);
         }
 #endif
 
@@ -395,7 +391,7 @@ uint8_t Dali::rx(uint8_t* ddata)
             return 2;
         return dlen;
     }
-    return 0; // should not get here
+    return 0;
 }
 
 //=================================================================
@@ -448,13 +444,9 @@ uint8_t Dali::tx_wait(uint8_t* data, uint8_t bitlen, uint16_t timeout_ms)
 int16_t Dali::tx_wait_rx(uint8_t cmd0, uint8_t cmd1, uint16_t timeout_ms)
 {
 #ifdef DALI_DEBUG
-    Serial.print("TX");
-    Serial.print(cmd0 >> 4, HEX);
-    Serial.print(cmd0 & 0xF, HEX);
-    Serial.print(cmd1 >> 4, HEX);
-    Serial.print(cmd1 & 0xF, HEX);
-    Serial.print(" ");
+    ESP_LOGI(TAG, "TX%1X%1X%1X%1X", cmd0 >> 4, cmd0 & 0xF, cmd1 >> 4, cmd1 & 0xF);
 #endif
+
     uint8_t data[4];
     data[0] = cmd0;
     data[1] = cmd1;
@@ -779,34 +771,21 @@ uint8_t Dali::read_memory_bank(uint8_t bank, uint8_t adr)
     if (set_dtr1(bank, adr))
         return 2;
 
-    // uint8_t data[255];
     uint16_t len = cmd(DALI_READ_MEMORY_LOCATION, adr);
 #ifdef DALI_DEBUG
-    Serial.print("memlen=");
-    Serial.println(len);
+    ESP_LOGI(TAG, "memlen=%d", len);
     for (uint8_t i = 0; i < len; i++) {
         int16_t mem = cmd(DALI_READ_MEMORY_LOCATION, adr);
         if (mem >= 0) {
-            // data[i] = mem;
-            Serial.print(i, HEX);
-            Serial.print(":");
-            Serial.print(mem);
-            Serial.print(" 0x");
-            Serial.print(mem, HEX);
-            Serial.print(" ");
-            if (mem >= 32 && mem < 127)
-                Serial.print((char)mem);
-            Serial.println();
+            ESP_LOGI(TAG, "%02X:%d 0x%02X %c", i, mem, mem, (mem >= 32 && mem < 127) ? (char)mem : ' ');
         } else if (mem != -DALI_RESULT_NO_REPLY) {
-            Serial.print(i, HEX);
-            Serial.print(":err=");
-            Serial.println(mem);
+            ESP_LOGE(TAG, "%02X:err=%d", i, mem);
         }
-        // delay(10);
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 #endif
 
-    uint16_t dtr0 = cmd(DALI_QUERY_CONTENT_DTR0, adr); // get DTR value
+    uint16_t dtr0 = cmd(DALI_QUERY_CONTENT_DTR0, adr); //get DTR value
     if (dtr0 != 255)
         return 4;
 

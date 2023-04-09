@@ -123,8 +123,6 @@ uint8_t debug_commission(uint8_t init_arg)
 
     printf("Find random adr\n");
     while (1) {
-        esp_task_wdt_reset();
-
         uint32_t adr = dali.find_addr();
         if (adr > 0xffffff)
             break;
@@ -146,6 +144,7 @@ uint8_t debug_commission(uint8_t init_arg)
         printf("read short adr=%d\n", dali.query_short_address());
         dali.cmd(DALI_WITHDRAW, 0x00);
         
+        vTaskDelay(1);
     }
 
     dali.cmd(DALI_TERMINATE, 0x00);
