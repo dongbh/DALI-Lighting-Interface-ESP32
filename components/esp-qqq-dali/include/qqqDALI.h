@@ -61,7 +61,7 @@ public:
   uint8_t rx(uint8_t *data); //low level non-blocking receive
   uint8_t tx_state(); //low level tx state, returns DALI_RESULT_COLLISION, DALI_RESULT_TRANSMITTING or DALI_OK
   uint8_t txcollisionhandling; //collision handling DALI_TX_COLLISSION_AUTO,DALI_TX_COLLISSION_OFF,DALI_TX_COLLISSION_ON
-  uint16_t milli(); //millis() implementation, 1 milli is 1.04167 ms (10 timer ticks), rollover 65 seconds
+  uint32_t milli(); //esp32 as 32-bit controller needs millis to be 32-bit to rollover correctly
   Dali() : txcollisionhandling(DALI_TX_COLLISSION_AUTO), busstate(0), /* ticks(0), _milli(0), */ idlecnt(0) {}; //initialize variables
   
   //-------------------------------------------------
@@ -73,8 +73,8 @@ public:
   uint8_t  set_min_level(uint8_t v, uint8_t adr=0xFF); //returns 0 on success
   uint8_t  set_system_failure_level(uint8_t v, uint8_t adr=0xFF); //returns 0 on success
   uint8_t  set_power_on_level(uint8_t v, uint8_t adr=0xFF); //returns 0 on success 
-  uint8_t  tx_wait(uint8_t* data, uint8_t bitlen, uint16_t timeout_ms=500); //blocking transmit bytes
-  int16_t  tx_wait_rx(uint8_t cmd0, uint8_t cmd1, uint16_t timeout_ms=500); //blocking transmit and receive
+  uint8_t  tx_wait(uint8_t* data, uint8_t bitlen, uint32_t timeout_ms=500); //blocking transmit bytes
+  int16_t  tx_wait_rx(uint8_t cmd0, uint8_t cmd1, uint32_t timeout_ms=500); //blocking transmit and receive
 
   uint8_t read_memory_bank(uint8_t bank, uint8_t adr);
   uint8_t set_dtr0(uint8_t value, uint8_t adr);

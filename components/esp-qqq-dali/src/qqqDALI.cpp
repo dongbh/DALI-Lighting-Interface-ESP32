@@ -21,7 +21,7 @@ Changelog:
 2020-11-08 Created & tested on ATMega328 @ 8Mhz
 ###########################################################################*/
 
-#define DALI_DEBUG
+// #define DALI_DEBUG
 
 //=================================================================
 // LOW LEVEL DRIVER
@@ -70,11 +70,11 @@ void Dali::_init()
     txcollision = 0;
 }
 
-uint16_t IRAM_ATTR Dali::milli()
+uint32_t IRAM_ATTR Dali::milli()
 {
     // // while(ticks==0xFF); //wait for _millis update to finish
     // // return _milli;
-    return esp_timer_get_time() / 1000;
+    return esp_timer_get_time() / 1000LL;
 }
 
 // timer interrupt service routine, called 9600 times per second
@@ -399,23 +399,21 @@ uint8_t Dali::rx(uint8_t* ddata)
 //=================================================================
 
 // blocking send - wait until successful send or timeout
-uint8_t Dali::tx_wait(uint8_t* data, uint8_t bitlen, uint16_t timeout_ms)
+uint8_t Dali::tx_wait(uint8_t* data, uint8_t bitlen, uint32_t timeout_ms)
 {
     if (bitlen > 32)
         return DALI_RESULT_DATA_TOO_LONG;
-    uint16_t start_ms = milli();
+    uint32_t start_ms = milli();
     while (1) {
         // wait for 10ms idle
         while (idlecnt < BEFORE_CMD_IDLE_MS) {
             // Serial.print('w');
-            vTaskDelay(1);
             if (milli() - start_ms > timeout_ms)
                 return DALI_RESULT_TIMEOUT;
         }
         // try transmit
         while (tx(data, bitlen) != DALI_OK) {
             // Serial.print('w');
-            vTaskDelay(1);
             if (milli() - start_ms > timeout_ms)
                 return DALI_RESULT_TIMEOUT;
         }
@@ -425,7 +423,6 @@ uint8_t Dali::tx_wait(uint8_t* data, uint8_t bitlen, uint16_t timeout_ms)
             rv = tx_state();
             if (rv != DALI_RESULT_TRANSMITTING)
                 break;
-            vTaskDelay(1);
             if (milli() - start_ms > timeout_ms)
                 return DALI_RESULT_TIMEOUT;
         }
@@ -433,7 +430,6 @@ uint8_t Dali::tx_wait(uint8_t* data, uint8_t bitlen, uint16_t timeout_ms)
         if (rv == DALI_OK)
             return DALI_OK;
         // not ok (for example collision) - retry until timeout
-        vTaskDelay(1);
     }
     return DALI_RESULT_TIMEOUT;
 }
@@ -441,7 +437,7 @@ uint8_t Dali::tx_wait(uint8_t* data, uint8_t bitlen, uint16_t timeout_ms)
 // blocking transmit 2 byte command, receive 1 byte reply (if a reply was sent)
 // returns >=0 with reply byte
 // returns <0 with negative result code
-int16_t Dali::tx_wait_rx(uint8_t cmd0, uint8_t cmd1, uint16_t timeout_ms)
+int16_t Dali::tx_wait_rx(uint8_t cmd0, uint8_t cmd1, uint32_t timeout_ms)
 {
 #ifdef DALI_DEBUG
     ESP_LOGI(TAG, "TX%1X%1X%1X%1X", cmd0 >> 4, cmd0 & 0xF, cmd1 >> 4, cmd1 & 0xF);
@@ -456,8 +452,8 @@ int16_t Dali::tx_wait_rx(uint8_t cmd0, uint8_t cmd1, uint16_t timeout_ms)
     ;
 
     // wait up to 10 ms for start of reply, additional 15ms for receive to complete
-    uint16_t rx_start_ms = milli();
-    uint16_t rx_timeout_ms = 10;
+    uint32_t rx_start_ms = milli();
+    uint32_t rx_timeout_ms = 10;
     while (1) {
         rv = rx(data);
         switch (rv) {
@@ -474,7 +470,6 @@ int16_t Dali::tx_wait_rx(uint8_t cmd0, uint8_t cmd1, uint16_t timeout_ms)
             else
                 return -DALI_RESULT_INVALID_REPLY;
         }
-        vTaskDelay(1);
         if (milli() - rx_start_ms > rx_timeout_ms)
             return -DALI_RESULT_NO_REPLY;
     }
@@ -685,6 +680,7 @@ uint8_t Dali::commission(uint8_t init_arg)
             if (init_arg != 0b00000000)
                 arr[sa] = 1; // remove address from list if not in "all" mode
         }
+        vTaskDelay(1);
     }
 
     // find random addresses and assign unused short addresses
