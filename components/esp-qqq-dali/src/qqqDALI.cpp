@@ -427,8 +427,15 @@ uint8_t Dali::tx_wait(uint8_t* data, uint8_t bitlen, uint32_t timeout_ms)
                 return DALI_RESULT_TIMEOUT;
         }
         // exit if transmit was ok
-        if (rv == DALI_OK)
+        if (rv == DALI_OK) {
+            int64_t start_us = esp_timer_get_time();
+            // wait for some time idle
+            while (esp_timer_get_time() - start_us < 1000)
+                __asm__ __volatile__("nop");
+
+            // Serial.print('o');
             return DALI_OK;
+        }
         // not ok (for example collision) - retry until timeout
     }
     return DALI_RESULT_TIMEOUT;
