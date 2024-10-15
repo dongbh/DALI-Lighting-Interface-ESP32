@@ -30,6 +30,7 @@
 #include "esp_task_wdt.h"
 
 #include <cstdio>
+#include <string.h>
 
 static const char* TAG = "main";
 
@@ -37,7 +38,7 @@ Dali dali;
 
 // Define the GPIO pins used for DALI bus communication
 #define DALI_RX_PIN GPIO_NUM_4
-#define DALI_TX_PIN GPIO_NUM_16
+#define DALI_TX_PIN GPIO_NUM_33
 
 #define TIMER_UPDATES_PER_SECOND 9600
 
@@ -202,7 +203,7 @@ void menu_read_memory()
       }
     */
 
-    printf("Running: Scan all short addresses\n");
+    printf("Running: Read Memory...\n");
     uint8_t sa;
     uint8_t cnt = 0;
     for (sa = 0; sa < 64; sa++) {
@@ -218,6 +219,7 @@ void menu_read_memory()
         } else if (-rv != DALI_RESULT_NO_REPLY) {
             printf("short address=%d ERROR=%d\n", sa, -rv);
         }
+
     }
     printf("DONE, found %d short addresses\n", cnt);
 }
@@ -231,6 +233,9 @@ void menu()
     printf("4 Commission short addresses (VERBOSE)\n");
     printf("5 Delete short addresses\n");
     printf("6 Read memory bank\n");
+    printf("7  send 0, 5\n");
+    printf("8  send 5(RecallMaxLevel), 0\n");
+    printf("9  send 0(Off), 0\n");
     printf("----------------------------\n");
 }
 
@@ -282,6 +287,7 @@ void menu_scan_short_addr()
         } else if (-rv != DALI_RESULT_NO_REPLY) {
             printf("short address=%d ERROR=%d\n", sa, -rv);
         }
+        vTaskDelay(1);
     }
     printf("DONE, found %d short addresses\n", cnt);
 }
@@ -320,6 +326,7 @@ extern "C" void app_main()
 {
     uint8_t data;
     size_t size;
+    uint8_t s[10];
 
     // Configure UART parameters
     uart_config_t uart_config = {
@@ -332,12 +339,14 @@ extern "C" void app_main()
 
     // Install UART driver
     uart_driver_install(UART_NUM_0, 1024, 0, 0, NULL, 0);
-
     // Configure UART parameters
     uart_param_config(UART_NUM_0, &uart_config);
-
     // Set UART pins (using default pins)
     uart_set_pin(UART_NUM_0, 1, 3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_2, 1024, 0, 0, NULL, 0));     //安装 UART 驱动程序并将 UART 设置为默认配置
+    ESP_ERROR_CHECK(uart_param_config(UART_NUM_2, &uart_config));              //设置 UART 配置参数
+    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_2, GPIO_NUM_17, GPIO_NUM_16, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
     vTaskDelay(1);
 
@@ -345,10 +354,26 @@ extern "C" void app_main()
     bus_init();
 
     printf("\nDALI Commissioning Demo\n");
+    char * str="This is a test\r\n";
+    uart_write_bytes(UART_NUM_2, str, strlen(str));
 
     menu();
 
     for (;;) {
+        if (uart_get_buffered_data_len(UART_NUM_2, &size) == ESP_OK) {
+            if (size >10)
+                size = 10;
+            if (size > 0) {
+                uart_read_bytes(UART_NUM_2, s, size, 0);
+                for (int i = 0 ; i < size ; i++)
+                    printf("%02X ", s[i]);
+                printf("\r\n");
+            }
+            if (size == 10) {
+                uart_read_bytes(UART_NUM_2, s, size, 0);
+                dali.cmd(s[8], s[7]);
+            }
+        }
 
         if (uart_get_buffered_data_len(UART_NUM_0, &size) != ESP_OK) {
             ESP_LOGE(TAG, "uart_get_buffered_data_len failed");
@@ -382,10 +407,24 @@ extern "C" void app_main()
                 menu_read_memory();
                 menu();
                 break;
+            case '7':
+                dali.cmd(0, 5);
+                menu();
+                break;
+            case '8':
+                dali.cmd(5, 0);;
+                menu();
+                break;
+            case '9':
+                dali.cmd(0, 0);;
+                menu();
+                break;
+
             }
+
             size--;
         }
 
-        vTaskDelay(1);
+        vTaskDelay( 10 / portTICK_PERIOD_MS);
     }
 }
