@@ -43,3 +43,6 @@ if __name__ == "__main__":
     ser.write(construct(cmd))     # write a string
     ser.close()     
 
+# AA 07 10 10 00 00 00 01 06 00 
+#                      01 means address 0
+#                         06 means command 06 (Miniuml Brightness)
